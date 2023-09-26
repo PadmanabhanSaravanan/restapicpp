@@ -1,6 +1,6 @@
 # RestApiCpp
 
-RestApplication using crow framework
+A C++ RESTful API using MongoDB and Crow
 
 ## Table of Contents
 
