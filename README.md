@@ -14,6 +14,7 @@ A C++ RESTful API using MongoDB and Crow
 * [**Crow Framework**](#crow-framework)
 * [**Install and setup CROW via vcpkg**](#install-and-setup-crow-using-vcpkg)
 * [**Create from scratch**](#create-from-scratch)
+* [**Endpoints through Postman**](#endpoints-through-postman)
 
 ### **Prerequisites**
 
@@ -441,7 +442,7 @@ bool findTodoRecord(mongocxx::collection& collection, const string& id)
 
 **9.** Now debug/run the project to view the final build.
 
-### Endpoints through Postman
+### **Endpoints through Postman**
 
 * Add Method `http://localhost:8080/api/todo/add`
 
