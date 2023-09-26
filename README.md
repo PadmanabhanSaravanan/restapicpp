@@ -13,7 +13,6 @@ RestApplication using crow framework
 * [**Boost Framework**](#boost-framework)
 * [**Crow Framework**](#crow-framework)
 * [**Install and setup CROW via vcpkg**](#install-and-setup-crow-using-vcpkg)
-* [**Run/Debug the project**](#run/debug-the-project)
 * [**Create from scratch**](#create-from-scratch)
 
 ### **Prerequisites**
@@ -280,23 +279,181 @@ vcpkg install crow
 vcpkg integrate install
 ```
 
-### **Run/Debug the project**
-
-* Click on the link to download RestApiCpp Application.
-* Extract to open `restapicpp.sln` using Visual Studio.
-* Run projects using `Local Windows Debugger`.
-
 ### **Create from scratch**
 
-* Create a new project in Visual Studio with template `Console App`.
-* Configure your new project with project name `ConsoleApplication`.
-* Open project properties. On the dialog box that appears, in the Configuration Properties, set C/C++ as follows :
-   - **General** - add Additional Include Directories `C:\mongo-cxx-driver\include\mongocxx\v_noabi;C:\mongo-cxx-driver\include\bsoncxx\v_noabi;C:\mongo-c-driver\include\libmongoc-1.0;C:\mongo-c-driver\include\libbson-1.0;%(AdditionalIncludeDirectories)`.
-   - **Language** - change the C++ Language Standard to C++17.
-   - **Command Line** - add `/Zc:__cplusplus` in the Additional Options field.
-* In the Configuration Properties, go to linker input and add the driver libs in Additional Dependencies section - `C:\mongo-c-driver\lib\bson-1.0.lib;C:\mongo-c-driver\lib\mongoc-1.0.lib;C:\mongo-cxx-driver\lib\bsoncxx.lib;C:\mongo-cxx-driver\lib\mongocxx.lib;%(AdditionalDependencies)`.
-* In the Configuration Properties, go to Debugging and add Environment path to the driver executables - `PATH=C:\mongo-c-driver\bin;C:\mongo-cxx-driver\bin`.
-* Apply changes to the dialog.
-* Add `ConsoleApplication.cpp` to project with the same file available in repository [`ConsoleApplication.cpp`](Source%20Files/ConsoleApplication/ConsoleApplication.cpp).
-* Add header file to the project from the repository [`Methods.h`](Source%20Files/ConsoleApplication/Methods.h).
-* Now debug/run the project to view the final build.
+**1.** Create a new project in Visual Studio with template `Console App`.
+
+**2.** Configure your new project with project name `restapicpp`.
+
+**3.** Open project properties. On the dialog box that appears, in the Configuration Properties, set C/C++ as follows :
+
+* **General** - add Additional Include Directories 
+
+```markdown
+C:\mongo-cxx-driver\include\mongocxx\v_noabi;C:\mongo-cxx-driver\include\bsoncxx\v_noabi;C:\mongo-c-driver\include\libmongoc-1.0;C:\mongo-c-driver\include\libbson-1.0;%(AdditionalIncludeDirectories)
+```
+
+
+
+* **Language** - change the C++ Language Standard to C++17.
+
+* **Command Line** - add `/Zc:__cplusplus` in the Additional Options field.
+
+**4.** In the Configuration Properties, go to linker input and add the driver libs in Additional Dependencies section
+
+```markdown
+"C:\Program Files\mongo-c-driver\lib\bson-1.0.lib";"C:\Program Files\mongo-c-driver\lib\mongoc-1.0.lib";"C:\Program Files\mongo-cxx-driver\lib\bsoncxx.lib";"C:\Program Files\mongo-cxx-driver\lib\mongocxx.lib";%(AdditionalDependencies)
+```
+
+**5.** In the Configuration Properties, go to Debugging and add Environment path to the driver executables - 
+
+`PATH=C:\mongo-c-driver\bin;C:\mongo-cxx-driver\bin`.
+
+**6.** Apply changes to the dialog.
+
+**7.** Add `restapicpp.cpp` to project.
+
+```c
+#include "Methods.h"
+
+// ********************************************** Main **********************************************
+int main()
+{
+	crow::SimpleApp app; //define your crow application
+	set_global_base("."); //search for the files in current dir.
+	mongocxx::instance inst{};
+	string mongoConnect = std::string("your-mongodb-uri");
+	mongocxx::client conn{ mongocxx::uri{mongoConnect} };
+	auto collection = conn["TodoRecords"]["TodoCollection"];//get collection from database
+
+	//API endpoint to read all documents
+	CROW_ROUTE(app, "/api/todo")
+		([&collection](const request& req) {
+		mongocxx::options::find opts;
+		auto docs = collection.find({}, opts);
+		vector<crow::json::rvalue> todo;
+
+		for (auto doc : docs) {
+			todo.push_back(json::load(bsoncxx::to_json(doc)));
+		}
+		crow::json::wvalue dto;
+		dto["todos"] = todo;
+		return crow::response{ dto };
+			});
+
+	//API endpoint to insert document from the given json body
+	CROW_ROUTE(app, "/api/todo/add").methods(HTTPMethod::POST)
+		([&collection](const request& req) {
+		crow::json::rvalue request_body = json::load(req.body);
+
+		// List of required keys
+		std::vector<std::string> required_keys = { "Id", "firstName", "lastName", "emailId", "location" };
+
+		// Check if all required keys exist in the request body
+		for (const auto& key : required_keys) {
+			if (!request_body.has(key)) {
+				return crow::response(400, "Required key '" + key + "' missing in request body");
+			}
+		}
+
+		// Check if the ID is already in the database
+		bool id_already_present = findTodoRecord(collection, std::string(request_body["Id"]));
+
+		if (!id_already_present) {
+			// ID is not present, so insert the new record
+			insertTodo(collection, createTodo({
+				{"Id", std::string(request_body["Id"])},
+				{"firstName", std::string(request_body["firstName"])},
+				{"lastName", std::string(request_body["lastName"])},
+				{"emailId", std::string(request_body["emailId"])},
+				{"location", std::string(request_body["location"])},
+				}));
+			return crow::response(200, "Todo Added Successfully!!");
+		}
+		else {
+			// ID is already present
+			return crow::response(400, "ID already present in the database");
+		}
+			});
+
+	//set the port, set the app to run on multiple threads, and run the app
+	app.bindaddr("127.0.0.1").port(8080).multithreaded().run();
+
+}
+```
+
+**8.** Add header file to the project,i.e `Methods.h`.
+
+```c
+#pragma once
+#include <mongocxx/client.hpp>
+#include <bsoncxx/builder/stream/document.hpp>
+#include <bsoncxx/json.hpp>
+#include <mongocxx/uri.hpp>
+#include <mongocxx/instance.hpp>
+#include <algorithm>
+#include <iostream>
+#include <vector>
+#include "crow.h"
+using namespace std;
+using namespace crow;
+using namespace crow::mustache;
+using bsoncxx::builder::basic::kvp;
+using bsoncxx::builder::basic::make_document;
+
+
+//Load the HTML content and render it using mustache
+string getView(const string& filename, context& x) {
+	auto page = load(filename + ".html");
+	return page.render_string(x);
+}
+
+// Create a document from the given key-value pairs.
+bsoncxx::document::value createTodo(const vector<pair<string, string>>& keyValues)
+{
+	bsoncxx::builder::stream::document document{};
+	for (auto& keyValue : keyValues)
+	{
+		document << keyValue.first << keyValue.second;
+	}
+	return document << bsoncxx::builder::stream::finalize;
+}
+
+// Add the document to the given collection.
+void insertTodo(mongocxx::collection& collection, const bsoncxx::document::value& document)
+{
+	collection.insert_one(document.view());
+}
+
+// Find a document from the given key-value pairs and return true if found.
+bool findTodo(mongocxx::collection& collection, const string& key, const string& value)
+{
+	// Create the query filter
+	auto filter = bsoncxx::builder::stream::document{} << key << value << bsoncxx::builder::stream::finalize;
+	//Add query filter argument in find
+	auto cursor = collection.find({ filter });
+	auto count = std::distance(cursor.begin(), cursor.end());
+	if (count != 0L) {
+		return true;
+	}
+	return false;
+}
+
+//Pass the given collection and key-value pairs.
+bool findTodoRecord(mongocxx::collection& collection, const string& id)
+{
+	return findTodo(collection, "Id", id);
+}
+```
+
+**9.** Now debug/run the project to view the final build.
+
+### Endpoints through Postman
+
+* Add Method `http://localhost:8080/api/todo/add`
+
+![image postman](image/img2.PNG)
+
+* GetAll Method `http://localhost:8080/api/todo`
+
+![image postman](image/img1.PNG)
